@@ -111,9 +111,14 @@ class FairseqTask(object):
         """
         d = Dictionary()
         for filename in filenames:
-            Dictionary.add_file_to_dictionary(
-                filename, d, tokenizer.tokenize_line, workers
-            )
+            if filename.endswith('.vi'):
+                Dictionary.add_file_to_dictionary(
+                    filename, d, tokenizer.tokenize_vi, workers
+                )
+            else:
+                Dictionary.add_file_to_dictionary(
+                    filename, d, tokenizer.tokenize_line, workers
+                )
         d.finalize(threshold=threshold, nwords=nwords, padding_factor=padding_factor)
         return d
 
@@ -348,7 +353,7 @@ class FairseqTask(object):
             a :class:`~fairseq.criterions.FairseqCriterion` instance
         """
         from fairseq import criterions
-
+        
         return criterions.build_criterion(cfg, self)
 
     def build_generator(
