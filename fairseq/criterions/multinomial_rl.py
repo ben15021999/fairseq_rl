@@ -9,7 +9,7 @@ import logging
 from collections import defaultdict
 
 from fairseq import utils
-from fairseq.sequene_generator_rl import SequenceGenerator
+from fairseq.sequence_generator import SequenceGenerator
 
 from fairseq.criterions import FairseqCriterion, register_criterion
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @register_criterion('multinomial_rl')
 class MultinomialRL(FairseqCriterion):
-    def __init__(self, task, beam_size, multinomial_sample_train, max_order, gram, mle_weight, rl_weight, modgleu):
+    def __init__(self, task, beam_size, multinomial_sample_train, sampling_topk, max_order, gram, mle_weight, rl_weight, modgleu):
         super().__init__(task)
         self.beam_size = beam_size
         self.multinomial_sample_train = multinomial_sample_train
@@ -26,6 +26,7 @@ class MultinomialRL(FairseqCriterion):
         self.mle_weight = mle_weight
         self.rl_weight = rl_weight
         self.modgleu = modgleu
+        self.sampling_topk = sampling_topk
 
     @staticmethod
     def add_args(parser):
@@ -35,6 +36,8 @@ class MultinomialRL(FairseqCriterion):
                             help='Beam size')
         parser.add_argument('--multinomial_sample_train', default='True', type=bool, metavar='D',
                             help="Multinomial Sample Train")
+        parser.add_argument('--sampling_topk', default='2', type=int, metavar='D',
+                            help="Top-K sampling")
         parser.add_argument('--max_order', default='4', type=int, metavar='D',
                             help='Max order')
         parser.add_argument('--gram', default='0', type=int, metavar='D',
@@ -53,23 +56,19 @@ class MultinomialRL(FairseqCriterion):
         # src_dict = self.task.source_dictionary
         tgt_dict = self.task.target_dictionary
         eos_idx = self.task.target_dictionary.eos()
-        print(self.beam_size)
         sample_beam = self.beam_size
         translator = SequenceGenerator([model], tgt_dict=tgt_dict, sampling=self.multinomial_sample_train,
-                                       beam_size=sample_beam, minlen=1)
+                                       beam_size=sample_beam, min_len=1, max_len = 200, sampling_topk=self.sampling_topk)
         translator.cuda()
         ct = 0
         translations = []
 
         s = utils.move_to_cuda(sample)
         input = s['net_input']
-        max_len = 200
         with torch.no_grad():
             hypos = translator.generate(
-                input['src_tokens'],
-                input['src_lengths'],
-                beam_size=sample_beam,
-                maxlen=max_len,
+                [model],
+                sample,
             )
         for i, id in enumerate(s['id'].data):
             src = input['src_tokens'].data[i, :]
@@ -185,8 +184,8 @@ class MultinomialRL(FairseqCriterion):
         translation_ngram_counts = self._get_ngrams(translation_array, max_order)
         overlap = translation_ngram_counts & merged_ref_ngram_counts
         for ngram in overlap:
-            matches_by_order[len(ngram)-1] += overlap[ngram]
-        for order in range(1, max_order+1):
+            matches_by_order[len(ngram) - 1] += overlap[ngram]
+        for order in range(1, max_order + 1):
             possible_matches_trans = translation_length - order + 1
             if possible_matches_trans > 0:
                 possible_matches_by_order_trans[order-1] += possible_matches_trans
@@ -227,11 +226,11 @@ class MultinomialRL(FairseqCriterion):
                 log_scores = torch.log(scores)
                 p_log_sum = torch.sum((1. / order) * log_scores)
                 geo_mean = torch.exp(p_log_sum)
-                return geo_mean
+                return torch.tensor(geo_mean)
             else:
-                return 0.0
+                return torch.tensor(0.0)
         else:
             if scores[gram] > 0:
-                return scores[gram]
+                return torch.tensor(scores[gram])
             else:
-                return 0.0
+                return torch.tensor(0.0)

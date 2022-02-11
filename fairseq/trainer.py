@@ -16,7 +16,7 @@ from argparse import Namespace
 from itertools import chain
 from typing import Any, Dict, List
 
-import torch
+import torch, gc
 from fairseq import checkpoint_utils, models, optim, utils
 from fairseq.dataclass.configs import FairseqConfig
 from fairseq.dataclass.utils import convert_namespace_to_omegaconf
@@ -64,6 +64,10 @@ class Trainer(object):
         else:
             self.device = torch.device("cpu")
 
+        torch.cuda.empty_cache()
+        torch.cuda.memory_summary(device=None, abbreviated=False)
+        gc.collect()
+        
         if self.is_fsdp:
             import fairscale
 
