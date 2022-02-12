@@ -429,6 +429,8 @@ class SequenceGenerator(nn.Module):
                 cand_bbsz_idx[:, :beam_size], mask=eos_mask[:, :beam_size]
             )
 
+            finalized_sents: List[int] = []
+
             if step < max_len:
                 if prefix_tokens is not None and step < prefix_tokens.size(1):
                     probs_slice = lprobs.view(bsz, -1, probs.size(-1))[:, 0, :]
@@ -510,26 +512,33 @@ class SequenceGenerator(nn.Module):
                 assert num_remaining_sent == 0
                 break
 
-            finalized_sents: List[int] = []
-            if eos_bbsz_idx.numel() > 0:
-                eos_scores = torch.masked_select(
-                    cand_scores[:, :beam_size], mask=eos_mask[:, :beam_size]
+            if step >= self.min_len:
+                # only consider eos when it's among the top beam_size indices
+                torch.masked_select(
+                    cand_bbsz_idx[:, :beam_size],
+                    mask=eos_mask[:, :beam_size],
+                    out=eos_bbsz_idx,
                 )
-
-                finalized_sents = self.finalize_hypos(
-                    step,
-                    eos_bbsz_idx,
-                    eos_scores,
-                    tokens,
-                    scores,
-                    finalized,
-                    finished,
-                    beam_size,
-                    attn,
-                    src_lengths,
-                    max_len,
-                )
-                num_remaining_sent -= len(finalized_sents)
+                if eos_bbsz_idx.numel() > 0:
+                    torch.masked_select(
+                        cand_scores[:, :beam_size],
+                        mask=eos_mask[:, :beam_size],
+                        out=eos_scores,
+                    )
+                    finalized_sents = self.finalize_hypos(
+                        step,
+                        eos_bbsz_idx,
+                        eos_scores,
+                        tokens,
+                        scores,
+                        finalized,
+                        finished,
+                        beam_size,
+                        attn,
+                        src_lengths,
+                        max_len,
+                    )
+                    num_remaining_sent -= len(finalized_sents)
 
             assert num_remaining_sent >= 0
             if num_remaining_sent == 0:

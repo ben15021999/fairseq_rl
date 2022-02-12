@@ -188,7 +188,7 @@ class MultinomialRL(FairseqCriterion):
         for order in range(1, max_order + 1):
             possible_matches_trans = translation_length - order + 1
             if possible_matches_trans > 0:
-                possible_matches_by_order_trans[order-1] += possible_matches_trans
+                possible_matches_by_order_trans[order - 1] += possible_matches_trans
             possible_matches_ref = reference_length - order + 1
             if possible_matches_ref > 0:
                 possible_matches_by_order_ref[order-1] += possible_matches_ref

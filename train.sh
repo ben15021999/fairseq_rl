@@ -1,5 +1,6 @@
 CHECKPOINTS=checkpoints/envi
 CUDA_LAUNCH_BLOCKING=1 python train.py data-bin/data.tokenized.en-vi \
+  -s en -t vi \
   --lr 0.25 --clip-norm 0.1 --dropout 0.2 --max-tokens 1024 \
   --arch transformer --save-dir checkpoints/envi \
   --optimizer adam \
