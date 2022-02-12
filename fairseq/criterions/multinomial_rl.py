@@ -89,7 +89,7 @@ class MultinomialRL(FairseqCriterion):
                               ignore_index=self.padding_idx, reduce=reduce)
         mle_tokens = sample['ntokens']
         avg_mle_loss = mle_loss / mle_tokens
-        print('avg_mle_loss:', avg_mle_loss)
+        # print('avg_mle_loss:', avg_mle_loss)
         # RL loss
         batch_rl_loss = 0
         batch_tokens = 0
@@ -130,7 +130,7 @@ class MultinomialRL(FairseqCriterion):
             batch_rl_loss += rl_loss
         
         avg_rl_loss = batch_rl_loss / batch_tokens
-        print('avg_rl_loss:', avg_rl_loss)
+        # print('avg_rl_loss:', avg_rl_loss)
         if self.mle_weight:
             assert self.rl_weight
             total_loss = self.mle_weight * avg_mle_loss + self.rl_weight * avg_rl_loss
@@ -143,7 +143,7 @@ class MultinomialRL(FairseqCriterion):
             'ntokens': total_tokens,
             'sample_size': total_tokens,
         }
-        print('total: ',total_loss)
+        # print('total: ',total_loss)
         return total_loss, total_tokens, logging_output
 
     @staticmethod
