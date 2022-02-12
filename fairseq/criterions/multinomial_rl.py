@@ -8,7 +8,7 @@ import numpy
 import logging
 from collections import defaultdict
 
-from fairseq import utils
+from fairseq import utils, metrics
 from fairseq.sequence_generator import SequenceGenerator
 
 from fairseq.criterions import FairseqCriterion, register_criterion
@@ -147,18 +147,25 @@ class MultinomialRL(FairseqCriterion):
         return total_loss, total_tokens, logging_output
 
     @staticmethod
-    def aggregate_logging_outputs(logging_outputs):
+    def reduce_metrics(logging_outputs) -> None:
         """Aggregate logging outputs from data parallel training."""
         loss_sum = sum(log.get('loss', 0) for log in logging_outputs)
         ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
         sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
-        agg_output = {
-            'loss': loss_sum / sample_size / math.log(2),
-            'sample_size': sample_size,
-        }
+        metrics.log_scalar(
+            "loss", loss_sum / sample_size / math.log(2), sample_size, round=3
+        )
         if sample_size != ntokens:
-            agg_output['nll_loss'] = loss_sum / ntokens / math.log(2)
-        return agg_output
+            metrics.log_scalar(
+                "nll_loss", loss_sum / ntokens / math.log(2), ntokens, round=3
+            )
+            metrics.log_derived(
+                "ppl", lambda meters: utils.get_perplexity(meters["nll_loss"].avg)
+            )
+        else:
+            metrics.log_derived(
+                "ppl", lambda meters: utils.get_perplexity(meters["loss"].avg)
+            )
 
     def _get_ngrams(self, segment, max_order):
         ngram_counts = collections.Counter()

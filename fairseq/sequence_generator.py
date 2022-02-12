@@ -276,6 +276,7 @@ class SequenceGenerator(nn.Module):
         scores = (
             torch.zeros(bsz * beam_size, max_len + 1).to(src_tokens).float()
         )  # +1 for eos; pad is never chosen for scoring
+        scores_buf = scores.clone()
         tokens = (
             torch.zeros(bsz * beam_size, max_len + 2)
             .to(src_tokens)
@@ -359,7 +360,7 @@ class SequenceGenerator(nn.Module):
                 lprobs += probs
 
             lprobs[lprobs != lprobs] = torch.tensor(-math.inf).to(lprobs)
-
+            
             lprobs[:, self.pad] = -math.inf  # never select pad
             lprobs[:, self.unk] -= self.unk_penalty  # apply unk penalty
 
@@ -450,6 +451,10 @@ class SequenceGenerator(nn.Module):
                             torch.multinomial(exp_probs, beam_size, replacement=True, out=cand_indices)
                         else:
                             torch.multinomial(exp_probs, 1, replacement=True, out=cand_indices)
+                        with open("log.txt", 'w') as f:
+                            f.write("exp_probs: " + exp_probs.__str__() + '\n')
+                            f.write("index:" + cand_indices.__str__() + '\n')
+                            f.write("out:" + cand_scores.__str__() + '\n')
                         torch.gather(exp_probs, dim=1, index=cand_indices, out=cand_scores)
                         torch.gather(indices, dim=1, index=cand_indices, out=cand_indices)
                         cand_indices.add_(2)
@@ -760,7 +765,7 @@ class SequenceGenerator(nn.Module):
                 cum_unfin.append(prev)
         cum_fin_tensor = torch.tensor(cum_unfin, dtype=torch.int).to(bbsz_idx)
 
-        unfin_idx = bbsz_idx // beam_size
+        unfin_idx = torch.div(bbsz_idx, beam_size, rounding_mode='trunc')
         sent = unfin_idx + torch.index_select(cum_fin_tensor, 0, unfin_idx)
 
         # Create a set of "{sent}{unfin_idx}", where
