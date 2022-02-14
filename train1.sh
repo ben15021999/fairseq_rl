@@ -4,6 +4,4 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py data-bin/data.tokenized.en-vi \
   --lr 0.25 --clip-norm 0.1 --dropout 0.2 --max-tokens 2048 \
   --arch transformer --save-dir checkpoints/envi \
   --optimizer adam \
-  --multinomial_sample_train True \
-  --beam_size 4 --max_order 5 --mle_weight 0.3 --rl_weight 0.7 --modgleu True \
-  --max-epoch 10 --criterion multinomial_rl --batch-size 8 --cpu
+  --max-epoch 10 --criterion reward_baseline --batch-size 4

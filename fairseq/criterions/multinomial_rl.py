@@ -9,7 +9,7 @@ import logging
 from collections import defaultdict
 
 from fairseq import utils, metrics
-from fairseq.sequence_generator import SequenceGenerator
+from fairseq.sequence_generator_rl import SequenceGenerator
 
 from fairseq.criterions import FairseqCriterion, register_criterion
 
@@ -166,6 +166,15 @@ class MultinomialRL(FairseqCriterion):
             metrics.log_derived(
                 "ppl", lambda meters: utils.get_perplexity(meters["loss"].avg)
             )
+
+    @staticmethod
+    def logging_outputs_can_be_summed() -> bool:
+        """
+        Whether the logging outputs returned by `forward` can be summed
+        across workers prior to calling `reduce_metrics`. Setting this
+        to True will improves distributed training speed.
+        """
+        return True
 
     def _get_ngrams(self, segment, max_order):
         ngram_counts = collections.Counter()

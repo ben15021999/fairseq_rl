@@ -37,6 +37,9 @@ class SequenceGenerator(nn.Module):
         symbols_to_strip_from_output=None,
         lm_model=None,
         lm_weight=1.0,
+        sampling=False,
+        sampling_topk=-1,
+        sampling_temperature=1
     ):
         """Generates translations of a given source sentence.
 
@@ -90,6 +93,10 @@ class SequenceGenerator(nn.Module):
         self.unk_penalty = unk_penalty
         self.temperature = temperature
         self.match_source_len = match_source_len
+
+        self.sampling = sampling
+        self.sampling_topk = sampling_topk
+        self.sampling_temperature = sampling_temperature
 
         if no_repeat_ngram_size > 0:
             self.repeat_ngram_blocker = NGramRepeatBlock(no_repeat_ngram_size)
@@ -269,6 +276,7 @@ class SequenceGenerator(nn.Module):
         scores = (
             torch.zeros(bsz * beam_size, max_len + 1).to(src_tokens).float()
         )  # +1 for eos; pad is never chosen for scoring
+        scores_buf = scores.clone()
         tokens = (
             torch.zeros(bsz * beam_size, max_len + 2)
             .to(src_tokens)
@@ -352,7 +360,7 @@ class SequenceGenerator(nn.Module):
                 lprobs += probs
 
             lprobs[lprobs != lprobs] = torch.tensor(-math.inf).to(lprobs)
-
+            
             lprobs[:, self.pad] = -math.inf  # never select pad
             lprobs[:, self.unk] -= self.unk_penalty  # apply unk penalty
 
@@ -423,12 +431,78 @@ class SequenceGenerator(nn.Module):
             )
 
             finalized_sents: List[int] = []
-            if eos_bbsz_idx.numel() > 0:
-                eos_scores = torch.masked_select(
-                    cand_scores[:, :beam_size], mask=eos_mask[:, :beam_size]
-                )
 
-                finalized_sents = self.finalize_hypos(
+            if step < max_len:
+                if prefix_tokens is not None and step < prefix_tokens.size(1):
+                    probs_slice = lprobs.view(bsz, -1, probs.size(-1))[:, 0, :]
+                    cand_scores = torch.gather(
+                        probs_slice, dim=1,
+                        index=prefix_tokens[:, step].view(-1, 1).data
+                    ).expand(-1, cand_size)
+                    cand_indices = prefix_tokens[:, step].view(-1, 1).expand(bsz, cand_size).data
+                    cand_beams.resize_as_(cand_indices).fill_(0)
+                elif self.sampling:
+                    assert self.pad == 1, 'sampling assumes the first two symbols can be ignored'
+
+                    if self.sampling_topk > 0:
+                        values, indices = lprobs[:, 2:].topk(self.sampling_topk)
+                        exp_probs = values.div_(self.sampling_temperature).exp()
+                        if step == 0:
+                            torch.multinomial(exp_probs, beam_size, replacement=True, out=cand_indices)
+                        else:
+                            torch.multinomial(exp_probs, 1, replacement=True, out=cand_indices)
+                        with open("log.txt", 'w') as f:
+                            f.write("exp_probs: " + exp_probs.__str__() + '\n')
+                            f.write("index:" + cand_indices.__str__() + '\n')
+                            f.write("out:" + cand_scores.__str__() + '\n')
+                        torch.gather(exp_probs, dim=1, index=cand_indices, out=cand_scores)
+                        torch.gather(indices, dim=1, index=cand_indices, out=cand_indices)
+                        cand_indices.add_(2)
+                    else:
+                        exp_probs = probs.div_(self.sampling_temperature).exp_().view(-1, self.vocab_size)
+
+                        if step == 0:
+                            # we exclude the first two vocab items, one of which is pad
+                            torch.multinomial(exp_probs[:, 2:], beam_size, replacement=True, out=cand_indices)
+                        else:
+                            torch.multinomial(exp_probs[:, 2:], 1, replacement=True, out=cand_indices)
+
+                        cand_indices.add_(2)
+                        torch.gather(exp_probs, dim=1, index=cand_indices, out=cand_scores)
+
+                    cand_scores.log_()
+                    cand_indices = cand_indices.view(bsz, -1).repeat(1, 2)
+                    cand_scores = cand_scores.view(bsz, -1).repeat(1, 2)
+                    if step == 0:
+                        cand_beams = torch.zeros(bsz, cand_size).type_as(cand_indices)
+                    else:
+                        cand_beams = torch.arange(0, beam_size).repeat(bsz, 2).type_as(cand_indices)
+                        # make scores cumulative
+                        cand_scores.add_(
+                            torch.gather(
+                                scores[:, step - 1].view(bsz, beam_size), dim=1,
+                                index=cand_beams,
+                            )
+                        )
+                else:
+                    # take the best 2 x beam_size predictions. We'll choose the first
+                    # beam_size of these which don't predict eos to continue with.
+                    torch.topk(
+                        lprobs.view(bsz, -1),
+                        k=min(cand_size, lprobs.view(bsz, -1).size(1) - 1),  # -1 so we never select pad
+                        out=(cand_scores, cand_indices),
+                    )
+                    torch.div(cand_indices, self.vocab_size, out=cand_beams)
+                    cand_indices.fmod_(self.vocab_size)
+            else:
+                # finalize all active hypotheses once we hit maxlen
+                # pick the hypothesis with the highest prob of EOS right now
+                torch.sort(
+                    lprobs[:, self.eos],
+                    descending=True,
+                    out=(eos_scores, eos_bbsz_idx),
+                )
+                num_remaining_sent -= len(self.finalize_hypos(
                     step,
                     eos_bbsz_idx,
                     eos_scores,
@@ -439,9 +513,37 @@ class SequenceGenerator(nn.Module):
                     beam_size,
                     attn,
                     src_lengths,
-                    max_len,
+                    max_len,))
+                assert num_remaining_sent == 0
+                break
+
+            if step >= self.min_len:
+                # only consider eos when it's among the top beam_size indices
+                torch.masked_select(
+                    cand_bbsz_idx[:, :beam_size],
+                    mask=eos_mask[:, :beam_size],
+                    out=eos_bbsz_idx,
                 )
-                num_remaining_sent -= len(finalized_sents)
+                if eos_bbsz_idx.numel() > 0:
+                    torch.masked_select(
+                        cand_scores[:, :beam_size],
+                        mask=eos_mask[:, :beam_size],
+                        out=eos_scores,
+                    )
+                    finalized_sents = self.finalize_hypos(
+                        step,
+                        eos_bbsz_idx,
+                        eos_scores,
+                        tokens,
+                        scores,
+                        finalized,
+                        finished,
+                        beam_size,
+                        attn,
+                        src_lengths,
+                        max_len,
+                    )
+                    num_remaining_sent -= len(finalized_sents)
 
             assert num_remaining_sent >= 0
             if num_remaining_sent == 0:
@@ -663,7 +765,7 @@ class SequenceGenerator(nn.Module):
                 cum_unfin.append(prev)
         cum_fin_tensor = torch.tensor(cum_unfin, dtype=torch.int).to(bbsz_idx)
 
-        unfin_idx = bbsz_idx // beam_size
+        unfin_idx = torch.div(bbsz_idx, beam_size, rounding_mode='trunc')
         sent = unfin_idx + torch.index_select(cum_fin_tensor, 0, unfin_idx)
 
         # Create a set of "{sent}{unfin_idx}", where

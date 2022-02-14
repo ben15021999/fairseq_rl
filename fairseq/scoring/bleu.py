@@ -83,9 +83,9 @@ class BleuConfig(FairseqDataclass):
 class Scorer(object):
     def __init__(self, cfg):
         self.stat = BleuStat()
-        self.pad = cfg.pad
-        self.eos = cfg.eos
-        self.unk = cfg.unk
+        self.pad = cfg.pad()
+        self.eos = cfg.eos()
+        self.unk = cfg.unk()
 
         try:
             from fairseq import libbleu
