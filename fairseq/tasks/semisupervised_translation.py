@@ -20,7 +20,7 @@ from fairseq.data import (
     indexed_dataset,
 )
 from fairseq.models import FairseqMultiModel
-from fairseq.sequence_generator import SequenceGenerator
+from fairseq.sequence_generator_rl import SequenceGenerator
 
 from . import register_task
 from .multilingual_translation import MultilingualTranslationTask

@@ -12,7 +12,7 @@ from fairseq.data import (
     LanguagePairDataset,
     TransformEosDataset,
 )
-from fairseq.sequence_generator import SequenceGenerator
+from fairseq.sequence_generator_rl import SequenceGenerator
 
 
 class TestBacktranslationDataset(unittest.TestCase):

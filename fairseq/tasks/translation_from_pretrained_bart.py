@@ -98,7 +98,7 @@ class TranslationFromPretrainedBARTTask(TranslationTask):
                 eos=self.tgt_dict.index("[{}]".format(self.args.target_lang)),
             )
         else:
-            from fairseq.sequence_generator import SequenceGenerator
+            from fairseq.sequence_generator_rl import SequenceGenerator
 
             return SequenceGenerator(
                 models,

@@ -29,7 +29,8 @@ class RewardBaselineCriterion(FairseqCriterion):
         super().__init__(task)
         self.n_sample = criterion_sample_size
         self.pad = task.tgt_dict.pad()
-        self.scorer = bleu.Scorer(cfg=task.tgt_dict)
+        tgt_dict = task.tgt_dict
+        self.scorer = bleu.Scorer(bleu.BleuConfig(pad=tgt_dict.pad(), eos=tgt_dict.eos(), unk=tgt_dict.unk()))
         self.sentence_avg = sentence_avg
 
     def forward(self, model, sample, reduce=True):

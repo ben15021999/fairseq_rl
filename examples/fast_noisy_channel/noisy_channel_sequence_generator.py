@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from .noisy_channel_beam_search import NoisyChannelBeamSearch
-from fairseq.sequence_generator import EnsembleModel
+from fairseq.sequence_generator_rl import EnsembleModel
 
 
 class NoisyChannelSequenceGenerator(object):

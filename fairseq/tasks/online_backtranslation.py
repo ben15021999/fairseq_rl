@@ -31,7 +31,7 @@ from fairseq.data import (
     data_utils,
     encoders,
 )
-from fairseq.sequence_generator import SequenceGenerator
+from fairseq.sequence_generator_rl import SequenceGenerator
 from fairseq.tasks import register_task
 from fairseq.tasks.translation import TranslationTask, load_langpair_dataset
 

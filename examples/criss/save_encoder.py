@@ -10,7 +10,7 @@ Translate pre-processed data with a trained model.
 import numpy as np
 import torch
 from fairseq import checkpoint_utils, options, progress_bar, tasks, utils
-from fairseq.sequence_generator import EnsembleModel
+from fairseq.sequence_generator_rl import EnsembleModel
 from fairseq.utils import safe_hasattr
 
 

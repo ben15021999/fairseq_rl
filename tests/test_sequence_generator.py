@@ -16,7 +16,7 @@ from fairseq import search
 from fairseq.data.dictionary import Dictionary
 from fairseq.models.transformer import TransformerModel
 from fairseq.ngram_repeat_block import NGramRepeatBlock
-from fairseq.sequence_generator import EnsembleModel, SequenceGenerator
+from fairseq.sequence_generator_rl import EnsembleModel, SequenceGenerator
 from fairseq.tasks.fairseq_task import LegacyFairseqTask
 
 DEFAULT_TEST_VOCAB_SIZE = 100
