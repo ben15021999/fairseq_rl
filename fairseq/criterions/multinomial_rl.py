@@ -52,7 +52,7 @@ class MultinomialRL(FairseqCriterion):
     def forward(self, model, sample, reduce=True):
         # sample mode
         #print('!!!RL loss.')
-        model.eval()
+        
         # src_dict = self.task.source_dictionary
         tgt_dict = self.task.target_dictionary
         eos_idx = self.task.target_dictionary.eos()

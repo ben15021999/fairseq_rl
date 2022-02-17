@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn.utils.rnn as rnn_utils
 
-from fairseq import metrics, utils
+from fairseq import metrics, search, utils
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.dataclass import FairseqDataclass
 
@@ -25,10 +25,11 @@ class CrossEntropyCriterionConfig(FairseqDataclass):
 @register_criterion('reward_baseline')
 class RewardBaselineCriterion(FairseqCriterion):
 
-    def __init__(self, task, criterion_sample_size, sentence_avg):
+    def __init__(self, task, criterion_sample_size, sentence_avg, beam):
         super().__init__(task)
-        self.n_sample = criterion_sample_size
+        self.sample_k = criterion_sample_size
         self.pad = task.tgt_dict.pad()
+        self.beam_size = beam
         tgt_dict = task.tgt_dict
         self.scorer = bleu.Scorer(bleu.BleuConfig(pad=tgt_dict.pad(), eos=tgt_dict.eos(), unk=tgt_dict.unk()))
         self.sentence_avg = sentence_avg
@@ -40,11 +41,25 @@ class RewardBaselineCriterion(FairseqCriterion):
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
-        model.eval()
+        # model.eval()
         # src_dict = self.task.source_dictionary
+        # tgt_dict = self.task.target_dictionary
+        # self.sample_gen = SequenceGenerator([model], tgt_dict, beam_size=self.n_sample)
+        # self.greedy_gen = SequenceGenerator([model], tgt_dict, beam_size=1)
+        # net_output = model(**sample['net_input'])
+        # loss, _ = self.compute_loss(model, net_output, sample, reduce=reduce)
+        # sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
+        # logging_output = {
+        #     'loss': loss.data,
+        #     'ntokens': sample['ntokens'],
+        #     'nsentences': sample['target'].size(0),
+        #     'sample_size': sample_size,
+        # }
+        # return loss, sample_size, logging_output
         tgt_dict = self.task.target_dictionary
-        self.sample_gen = SequenceGenerator([model], tgt_dict, beam_size=self.n_sample)
-        self.greedy_gen = SequenceGenerator([model], tgt_dict, beam_size=1)
+        search_strategy = search.Sampling(tgt_dict, sampling_topk=self.sample_k)
+        self.sample_gen = SequenceGenerator([model], tgt_dict, beam_size=self.beam_size, search_strategy=search_strategy)
+        self.greedy_gen = SequenceGenerator([model], tgt_dict, beam_size=1, search_strategy=search_strategy)
         net_output = model(**sample['net_input'])
         loss, _ = self.compute_loss(model, net_output, sample, reduce=reduce)
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
@@ -60,6 +75,7 @@ class RewardBaselineCriterion(FairseqCriterion):
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
         parser.add_argument('--criterion-sample-size', type=int, default=5, help='Number of sample size (default: 5)')
+        parser.add_argument('--beam', type=int, default=4, help='Beam size (default: 4)')
 
     def reword(self, ref, pred):
         self.scorer.reset(one_init=True)
@@ -86,7 +102,7 @@ class RewardBaselineCriterion(FairseqCriterion):
         bos = sample['net_input']['prev_output_tokens'][:,:1]
 
         scores = []
-        for n in range(self.n_sample):
+        for n in range(self.beam_size):
             output_tokens = [y_hat_i[n]['tokens'] for y_hat_i in y_hat]
             output_tokens = rnn_utils.pad_sequence(output_tokens, batch_first=True, padding_value=self.pad)
 
@@ -104,7 +120,7 @@ class RewardBaselineCriterion(FairseqCriterion):
         scores = torch.cat(scores, dim=-1)
         r_d = r_d.to(scores.device)
 
-        loss = ((scores * r_d) / self.n_sample).sum()
+        loss = ((scores * r_d) / self.beam_size).sum()
 
         return loss, loss
 
