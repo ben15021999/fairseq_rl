@@ -8,8 +8,8 @@ import numpy
 import logging
 from collections import defaultdict
 
-from fairseq import utils, metrics
-from fairseq.sequence_generator_rl import SequenceGenerator
+from fairseq import utils, metrics, search
+from fairseq.sequence_generator import SequenceGenerator
 
 from fairseq.criterions import FairseqCriterion, register_criterion
 
@@ -17,14 +17,14 @@ logger = logging.getLogger(__name__)
 
 @register_criterion('multinomial_rl')
 class MultinomialRL(FairseqCriterion):
-    def __init__(self, task, beam_size, multinomial_sample_train, sampling_topk, max_order, gram, mle_weight, rl_weight, modgleu):
+    def __init__(self, task, beam_size, multinomial_sample_train, sampling_topk, max_order, gram, mle_weight, modgleu):
         super().__init__(task)
         self.beam_size = beam_size
         self.multinomial_sample_train = multinomial_sample_train
         self.max_order = max_order
         self.gram = gram
         self.mle_weight = mle_weight
-        self.rl_weight = rl_weight
+        self.rl_weight = 1.0 - mle_weight
         self.modgleu = modgleu
         self.sampling_topk = sampling_topk
 
@@ -44,8 +44,6 @@ class MultinomialRL(FairseqCriterion):
                             help="gram")
         parser.add_argument('--mle_weight', default='0.3', type=float, metavar='D',
                             help='MLE weight')
-        parser.add_argument('--rl_weight', default='0.7', type=float, metavar='D',
-                            help="RL weight")
         parser.add_argument('--modgleu', default='True', type=bool, metavar='D',
                             help="Mod GLEU")
 
@@ -57,23 +55,26 @@ class MultinomialRL(FairseqCriterion):
         tgt_dict = self.task.target_dictionary
         eos_idx = self.task.target_dictionary.eos()
         sample_beam = self.beam_size
-        translator = SequenceGenerator([model], tgt_dict=tgt_dict, sampling=self.multinomial_sample_train,
-                                       beam_size=sample_beam, min_len=1, max_len = 200, sampling_topk=self.sampling_topk)
-        translator.cuda()
+        search_strategy = (
+            search.Sampling(tgt_dict, sampling_topk=self.sampling_topk) if self.multinomial_sample_train else None
+        )
+        translator = SequenceGenerator([model], tgt_dict=tgt_dict,
+                                       beam_size=sample_beam, min_len=1, max_len=200, search_strategy=search_strategy)
+        # translator.cuda()
         ct = 0
         translations = []
 
-        s = utils.move_to_cuda(sample)
-        input = s['net_input']
+        # s = utils.move_to_cuda(sample)
+        input = sample['net_input']
         with torch.no_grad():
             hypos = translator.generate(
                 [model],
                 sample,
             )
-        for i, id in enumerate(s['id'].data):
+        for i, id in enumerate(sample['id'].data):
             src = input['src_tokens'].data[i, :]
             # remove padding from ref
-            ref = utils.strip_pad(s['target'].data[i, :], tgt_dict.pad()) if s['target'] is not None else None
+            ref = utils.strip_pad(sample['target'].data[i, :], tgt_dict.pad()) if sample['target'] is not None else None
             translations.append((id, src, ref, hypos[i]))
             ct += 1
         # print("sample batch size:", ct)
@@ -90,6 +91,7 @@ class MultinomialRL(FairseqCriterion):
         mle_tokens = sample['ntokens']
         avg_mle_loss = mle_loss / mle_tokens
         # print('avg_mle_loss:', avg_mle_loss)
+
         # RL loss
         batch_rl_loss = 0
         batch_tokens = 0
@@ -116,7 +118,7 @@ class MultinomialRL(FairseqCriterion):
                     },
                     'target': trans_tokens.view(1, -1)
                 }
-                train_sample = utils.move_to_cuda(train_sample)
+                # train_sample = utils.move_to_cuda(train_sample)
                 net_output = model(**train_sample['net_input'])
                 lprobs = model.get_normalized_probs(net_output, log_probs=True)
                 lprobs = lprobs.view(-1, lprobs.size(-1))
@@ -131,19 +133,23 @@ class MultinomialRL(FairseqCriterion):
         
         avg_rl_loss = batch_rl_loss / batch_tokens
         # print('avg_rl_loss:', avg_rl_loss)
+
         if self.mle_weight:
-            assert self.rl_weight
             total_loss = self.mle_weight * avg_mle_loss + self.rl_weight * avg_rl_loss
             total_tokens = batch_tokens + mle_tokens
         else:
             total_loss = avg_rl_loss
             total_tokens = batch_tokens
+
         logging_output = {
             'loss': utils.item(total_loss.data),
             'ntokens': total_tokens,
+            'nsentences': sample['target'].size(0),
             'sample_size': total_tokens,
         }
+
         # print('total: ',total_loss)
+
         return total_loss, total_tokens, logging_output
 
     @staticmethod
