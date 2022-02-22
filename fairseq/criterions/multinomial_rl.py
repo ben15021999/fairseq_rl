@@ -86,8 +86,12 @@ class MultinomialRL(FairseqCriterion):
         mle_lprobs = model.get_normalized_probs(mle_net_output, log_probs=True)
         mle_lprobs = mle_lprobs.view(-1, mle_lprobs.size(-1))
         mle_target = model.get_targets(sample, mle_net_output).view(-1)
-        mle_loss = F.nll_loss(mle_lprobs, mle_target, size_average=False,
-                              ignore_index=self.padding_idx, reduce=reduce)
+        mle_loss = F.nll_loss(
+            mle_lprobs, 
+            mle_target, 
+            size_average=False,
+            ignore_index=self.padding_idx, 
+            reduction='sum' if reduce else None)
         mle_tokens = sample['ntokens']
         avg_mle_loss = mle_loss / mle_tokens
         # print('avg_mle_loss:', avg_mle_loss)
