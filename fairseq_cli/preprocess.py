@@ -22,6 +22,7 @@ from fairseq.binarizer import (
     VocabularyDatasetBinarizer,
 )
 from fairseq.data import Dictionary
+from fairseq.tokenizer import tokenize_vi
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -107,11 +108,17 @@ def _make_binary_dataset(
     args: Namespace,
 ):
     logger.info("[{}] Dictionary: {} types".format(lang, len(vocab)))
-
-    binarizer = VocabularyDatasetBinarizer(
-        vocab,
-        append_eos=True,
-    )
+    if lang.endswith('vi'):
+        binarizer = VocabularyDatasetBinarizer(
+            vocab,
+            tokenize=tokenize_vi,
+            append_eos=True,
+        )
+    else:
+        binarizer = VocabularyDatasetBinarizer(
+            vocab,
+            append_eos=True,
+        )
 
     input_file = "{}{}".format(input_prefix, ("." + lang) if lang is not None else "")
     full_output_prefix = dataset_dest_prefix(args, output_prefix, lang)

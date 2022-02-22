@@ -52,6 +52,7 @@ class MultinomialRL(FairseqCriterion):
         #print('!!!RL loss.')
         
         # src_dict = self.task.source_dictionary
+        f = open('log.txt', 'w')
         tgt_dict = self.task.target_dictionary
         eos_idx = self.task.target_dictionary.eos()
         sample_beam = self.beam_size
@@ -73,13 +74,14 @@ class MultinomialRL(FairseqCriterion):
                 sample,
             )
         for i, id in enumerate(s['id'].data):
+            print("123:", id)
             src = input['src_tokens'].data[i, :]
             # remove padding from ref
             ref = utils.strip_pad(s['target'].data[i, :], tgt_dict.pad()) if s['target'] is not None else None
             translations.append((id, src, ref, hypos[i]))
             ct += 1
         # print("sample batch size:", ct)
-
+        print(translations, file=f)
         model.train()
 
         # MLE loss
@@ -253,11 +255,11 @@ class MultinomialRL(FairseqCriterion):
                 log_scores = torch.log(scores)
                 p_log_sum = torch.sum((1. / order) * log_scores)
                 geo_mean = torch.exp(p_log_sum)
-                return torch.tensor(geo_mean)
+                return geo_mean.clone().detach()
             else:
                 return torch.tensor(0.0)
         else:
             if scores[gram] > 0:
-                return torch.tensor(scores[gram])
+                return scores[gram].clone().detach()
             else:
                 return torch.tensor(0.0)

@@ -112,6 +112,7 @@ class FairseqTask(object):
         d = Dictionary()
         for filename in filenames:
             if filename.endswith('.vi'):
+                print(filename)
                 Dictionary.add_file_to_dictionary(
                     filename, d, tokenizer.tokenize_vi, workers
                 )
