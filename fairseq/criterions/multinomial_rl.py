@@ -40,7 +40,7 @@ class MultinomialRL(FairseqCriterion):
                             help="Top-K sampling")
         parser.add_argument('--max_order', default='4', type=int, metavar='D',
                             help='Max order')
-        parser.add_argument('--gram', default='0', type=int, metavar='D',
+        parser.add_argument('--gram', default='1', type=int, metavar='D',
                             help="gram")
         parser.add_argument('--mle_weight', default='0.3', type=float, metavar='D',
                             help='MLE weight')
@@ -64,17 +64,18 @@ class MultinomialRL(FairseqCriterion):
         ct = 0
         translations = []
 
-        # s = utils.move_to_cuda(sample)
-        input = sample['net_input']
+        s = utils.move_to_cuda(sample)
+        input = s['net_input']
+        bos = s['net_input']['prev_output_tokens'][:,:1]
         with torch.no_grad():
             hypos = translator.generate(
                 [model],
                 sample,
             )
-        for i, id in enumerate(sample['id'].data):
+        for i, id in enumerate(s['id'].data):
             src = input['src_tokens'].data[i, :]
             # remove padding from ref
-            ref = utils.strip_pad(sample['target'].data[i, :], tgt_dict.pad()) if sample['target'] is not None else None
+            ref = utils.strip_pad(s['target'].data[i, :], tgt_dict.pad()) if s['target'] is not None else None
             translations.append((id, src, ref, hypos[i]))
             ct += 1
         # print("sample batch size:", ct)
@@ -152,7 +153,7 @@ class MultinomialRL(FairseqCriterion):
             'sample_size': total_tokens,
         }
 
-        # print('total: ',total_loss)
+        print('total: ',total_loss)
 
         return total_loss, total_tokens, logging_output
 
