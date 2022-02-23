@@ -1,6 +1,8 @@
+from distutils.util import strtobool
 from email.policy import default
 import math
 from operator import mod
+from xmlrpc.client import boolean
 import torch.nn.functional as F
 import collections
 import torch
@@ -27,6 +29,7 @@ class MultinomialRL(FairseqCriterion):
         self.rl_weight = 1.0 - mle_weight
         self.modgleu = modgleu
         self.sampling_topk = sampling_topk
+        print(modgleu)
 
     @staticmethod
     def add_args(parser):
@@ -44,8 +47,8 @@ class MultinomialRL(FairseqCriterion):
                             help="gram")
         parser.add_argument('--mle_weight', default='0.3', type=float, metavar='D',
                             help='MLE weight')
-        parser.add_argument('--modgleu', default='True', type=bool, metavar='D',
-                            help="Mod GLEU")
+        parser.add_argument('--modgleu', default=False, type=boolean, metavar='D',
+                            help="Modified GLEU")
 
     def forward(self, model, sample, reduce=True):
         # sample mode
@@ -61,7 +64,7 @@ class MultinomialRL(FairseqCriterion):
         )
         translator = SequenceGenerator([model], tgt_dict=tgt_dict,
                                        beam_size=sample_beam, min_len=1, max_len=200, search_strategy=search_strategy)
-        # translator.cuda()
+        translator.cuda()
         ct = 0
         translations = []
 
@@ -74,7 +77,6 @@ class MultinomialRL(FairseqCriterion):
                 sample,
             )
         for i, id in enumerate(s['id'].data):
-            print("123:", id)
             src = input['src_tokens'].data[i, :]
             # remove padding from ref
             ref = utils.strip_pad(s['target'].data[i, :], tgt_dict.pad()) if s['target'] is not None else None
@@ -91,8 +93,7 @@ class MultinomialRL(FairseqCriterion):
         mle_target = model.get_targets(sample, mle_net_output).view(-1)
         mle_loss = F.nll_loss(
             mle_lprobs, 
-            mle_target, 
-            size_average=False,
+            mle_target,
             ignore_index=self.padding_idx, 
             reduction='sum' if reduce else None)
         mle_tokens = sample['ntokens']
@@ -125,7 +126,7 @@ class MultinomialRL(FairseqCriterion):
                     },
                     'target': trans_tokens.view(1, -1)
                 }
-                # train_sample = utils.move_to_cuda(train_sample)
+                train_sample = utils.move_to_cuda(train_sample)
                 net_output = model(**train_sample['net_input'])
                 lprobs = model.get_normalized_probs(net_output, log_probs=True)
                 lprobs = lprobs.view(-1, lprobs.size(-1))
@@ -155,7 +156,7 @@ class MultinomialRL(FairseqCriterion):
             'sample_size': total_tokens,
         }
 
-        print('total: ',total_loss)
+        # print('total: ',total_loss)
 
         return total_loss, total_tokens, logging_output
 
@@ -249,7 +250,6 @@ class MultinomialRL(FairseqCriterion):
                 order = max_order
         else:
             order = max_order
-        
         if gram == 0:
             if min(scores) > 0:
                 log_scores = torch.log(scores)

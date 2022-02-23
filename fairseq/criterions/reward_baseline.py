@@ -59,7 +59,7 @@ class RewardBaselineCriterion(FairseqCriterion):
         tgt_dict = self.task.target_dictionary
         search_strategy = search.Sampling(tgt_dict, sampling_topk=self.sample_k)
         self.sample_gen = SequenceGenerator([model], tgt_dict, beam_size=self.beam_size, search_strategy=search_strategy)
-        self.greedy_gen = SequenceGenerator([model], tgt_dict, beam_size=1, search_strategy=search_strategy)
+        self.greedy_gen = SequenceGenerator([model], tgt_dict, beam_size=1)
         net_output = model(**sample['net_input'])
         loss, _ = self.compute_loss(model, net_output, sample, reduce=reduce)
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
