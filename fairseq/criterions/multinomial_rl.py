@@ -55,7 +55,6 @@ class MultinomialRL(FairseqCriterion):
         #print('!!!RL loss.')
         
         # src_dict = self.task.source_dictionary
-        f = open('log.txt', 'w')
         tgt_dict = self.task.target_dictionary
         eos_idx = self.task.target_dictionary.eos()
         sample_beam = self.beam_size
@@ -83,7 +82,6 @@ class MultinomialRL(FairseqCriterion):
             translations.append((id, src, ref, hypos[i]))
             ct += 1
         # print("sample batch size:", ct)
-        print(translations, file=f)
         model.train()
 
         # MLE loss
