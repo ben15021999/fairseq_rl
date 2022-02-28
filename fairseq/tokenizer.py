@@ -5,6 +5,7 @@
 
 import re
 from pyvi import ViTokenizer
+from underthesea import word_tokenize
 
 SPACE_NORMALIZER = re.compile(r"\s+")
 
@@ -17,4 +18,4 @@ def tokenize_line(line):
 def tokenize_vi(line):
     line = SPACE_NORMALIZER.sub(" ", line)
     line = line.strip()
-    return ViTokenizer.tokenize(line).split(' ')
+    return word_tokenize(line, format="text").split()
