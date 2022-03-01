@@ -10,24 +10,23 @@ import numpy
 import logging
 from collections import defaultdict
 
-from fairseq import utils, metrics, search
+from fairseq import utils, metrics, search, scoring
 from fairseq.sequence_generator import SequenceGenerator
+from fairseq.scoring import bleu
 
 from fairseq.criterions import FairseqCriterion, register_criterion
 
 logger = logging.getLogger(__name__)
 
-@register_criterion('multinomial_rl')
+@register_criterion('reward_shaping')
 class MultinomialRL(FairseqCriterion):
     def __init__(self, task, beam_size, multinomial_sample_train, sampling_topk, max_order, gram, mle_weight, modgleu):
         super().__init__(task)
         self.beam_size = beam_size
         self.multinomial_sample_train = multinomial_sample_train
         self.max_order = max_order
-        self.gram = gram
-        self.mle_weight = mle_weight
-        self.rl_weight = 1.0 - mle_weight
-        self.modgleu = modgleu
+        tgt_dict = task.tgt_dict
+        self.scorer = bleu.Scorer(bleu.BleuConfig(pad=tgt_dict.pad(), eos=tgt_dict.eos(), unk=tgt_dict.unk()))
         self.sampling_topk = sampling_topk
         # print(modgleu)
 
@@ -43,12 +42,6 @@ class MultinomialRL(FairseqCriterion):
                             help="Top-K sampling")
         parser.add_argument('--max_order', default='4', type=int, metavar='D',
                             help='Max order')
-        parser.add_argument('--gram', default='1', type=int, metavar='D',
-                            help="gram")
-        parser.add_argument('--mle_weight', default='0.3', type=float, metavar='D',
-                            help='MLE weight')
-        parser.add_argument('--modgleu', default=False, type=boolean, metavar='D',
-                            help="Modified GLEU")
 
     def forward(self, model, sample, reduce=True):
         # sample mode
@@ -188,76 +181,76 @@ class MultinomialRL(FairseqCriterion):
         """
         return True
 
-    def _get_ngrams(self, segment, max_order):
-        ngram_counts = collections.Counter()
-        for order in range(1, max_order + 1):
-            for i in range(0, len(segment) - order + 1):
-                ngram = tuple(segment[i:i + order])
-                ngram_counts[ngram] += 1
-        return ngram_counts
+    # def _get_ngrams(self, segment, max_order):
+    #     ngram_counts = collections.Counter()
+    #     for order in range(1, max_order + 1):
+    #         for i in range(0, len(segment) - order + 1):
+    #             ngram = tuple(segment[i:i + order])
+    #             ngram_counts[ngram] += 1
+    #     return ngram_counts
 
-    def compute_gleu(self, reference_corpus, translation_corpus, max_order=4, gram=0, smooth=False):
-        scores = torch.zeros(max_order)
-        reference_array = numpy.array(reference_corpus)
-        translation_array = numpy.array(translation_corpus)
-        matches_by_order = [0] * max_order
-        possible_matches_by_order_ref = [0] * max_order
-        possible_matches_by_order_trans = [0] * max_order
-        reference_length = 0
-        translation_length = 0
-        reference_length += reference_array.shape[0]
-        translation_length += translation_array.shape[0]
-        merged_ref_ngram_counts = collections.Counter()
-        merged_ref_ngram_counts |= self._get_ngrams(reference_array, max_order)
-        translation_ngram_counts = self._get_ngrams(translation_array, max_order)
-        overlap = translation_ngram_counts & merged_ref_ngram_counts
-        for ngram in overlap:
-            matches_by_order[len(ngram) - 1] += overlap[ngram]
-        for order in range(1, max_order + 1):
-            possible_matches_trans = translation_length - order + 1
-            if possible_matches_trans > 0:
-                possible_matches_by_order_trans[order - 1] += possible_matches_trans
-            possible_matches_ref = reference_length - order + 1
-            if possible_matches_ref > 0:
-                possible_matches_by_order_ref[order-1] += possible_matches_ref
-        precisions = [0] * max_order
-        recalls = [0] * max_order
+    # def compute_gleu(self, reference_corpus, translation_corpus, max_order=4, gram=0, smooth=False):
+    #     scores = torch.zeros(max_order)
+    #     reference_array = numpy.array(reference_corpus)
+    #     translation_array = numpy.array(translation_corpus)
+    #     matches_by_order = [0] * max_order
+    #     possible_matches_by_order_ref = [0] * max_order
+    #     possible_matches_by_order_trans = [0] * max_order
+    #     reference_length = 0
+    #     translation_length = 0
+    #     reference_length += reference_array.shape[0]
+    #     translation_length += translation_array.shape[0]
+    #     merged_ref_ngram_counts = collections.Counter()
+    #     merged_ref_ngram_counts |= self._get_ngrams(reference_array, max_order)
+    #     translation_ngram_counts = self._get_ngrams(translation_array, max_order)
+    #     overlap = translation_ngram_counts & merged_ref_ngram_counts
+    #     for ngram in overlap:
+    #         matches_by_order[len(ngram) - 1] += overlap[ngram]
+    #     for order in range(1, max_order + 1):
+    #         possible_matches_trans = translation_length - order + 1
+    #         if possible_matches_trans > 0:
+    #             possible_matches_by_order_trans[order - 1] += possible_matches_trans
+    #         possible_matches_ref = reference_length - order + 1
+    #         if possible_matches_ref > 0:
+    #             possible_matches_by_order_ref[order-1] += possible_matches_ref
+    #     precisions = [0] * max_order
+    #     recalls = [0] * max_order
 
-        for i in range(0, max_order):
-            if smooth:
-                precisions[i] = ((matches_by_order[i] + 1.) / (possible_matches_by_order_trans[i] + 1.))
-                recalls[i] = ((matches_by_order[i] + 1.) / (possible_matches_by_order_ref[i] + 1.))
-            else:
-                if possible_matches_by_order_trans[i] > 0:
-                    precisions[i] = (float(matches_by_order[i]) / possible_matches_by_order_trans[i])
-                else:
-                    precisions[i] = 0.0
+    #     for i in range(0, max_order):
+    #         if smooth:
+    #             precisions[i] = ((matches_by_order[i] + 1.) / (possible_matches_by_order_trans[i] + 1.))
+    #             recalls[i] = ((matches_by_order[i] + 1.) / (possible_matches_by_order_ref[i] + 1.))
+    #         else:
+    #             if possible_matches_by_order_trans[i] > 0:
+    #                 precisions[i] = (float(matches_by_order[i]) / possible_matches_by_order_trans[i])
+    #             else:
+    #                 precisions[i] = 0.0
                 
-                if possible_matches_by_order_ref[i] > 0:
-                    recalls[i] = (float(matches_by_order[i]) / possible_matches_by_order_ref[i])
-                else:
-                    recalls[i] = 0.0
-        for i in range(max_order):
-            scores[i] = min(precisions[i],recalls[i])
+    #             if possible_matches_by_order_ref[i] > 0:
+    #                 recalls[i] = (float(matches_by_order[i]) / possible_matches_by_order_ref[i])
+    #             else:
+    #                 recalls[i] = 0.0
+    #     for i in range(max_order):
+    #         scores[i] = min(precisions[i],recalls[i])
 
-        if self.modgleu:
-            if reference_length < max_order and translation_length < max_order:
-                order = max(reference_length, translation_length)
-                scores = scores[0:order]
-            else:
-                order = max_order
-        else:
-            order = max_order
-        if gram == 0:
-            if min(scores) > 0:
-                log_scores = torch.log(scores)
-                p_log_sum = torch.sum((1. / order) * log_scores)
-                geo_mean = torch.exp(p_log_sum)
-                return geo_mean.clone().detach()
-            else:
-                return torch.tensor(0.0)
-        else:
-            if scores[gram] > 0:
-                return scores[gram].clone().detach()
-            else:
-                return torch.tensor(0.0)
+    #     if self.modgleu:
+    #         if reference_length < max_order and translation_length < max_order:
+    #             order = max(reference_length, translation_length)
+    #             scores = scores[0:order]
+    #         else:
+    #             order = max_order
+    #     else:
+    #         order = max_order
+    #     if gram == 0:
+    #         if min(scores) > 0:
+    #             log_scores = torch.log(scores)
+    #             p_log_sum = torch.sum((1. / order) * log_scores)
+    #             geo_mean = torch.exp(p_log_sum)
+    #             return geo_mean.clone().detach()
+    #         else:
+    #             return torch.tensor(0.0)
+    #     else:
+    #         if scores[gram] > 0:
+    #             return scores[gram].clone().detach()
+    #         else:
+    #             return torch.tensor(0.0)

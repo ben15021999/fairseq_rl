@@ -25,12 +25,13 @@ class CrossEntropyCriterionConfig(FairseqDataclass):
 @register_criterion('reward_baseline')
 class RewardBaselineCriterion(FairseqCriterion):
 
-    def __init__(self, task, criterion_sample_size, sentence_avg, beam):
+    def __init__(self, task, sampling_topk, sentence_avg, beam_size, max_order):
         super().__init__(task)
-        self.sample_k = criterion_sample_size
+        self.sampling_k = sampling_topk
         self.pad = task.tgt_dict.pad()
-        self.beam_size = beam
+        self.beam_size = beam_size
         tgt_dict = task.tgt_dict
+        self.max_order = max_order
         self.scorer = bleu.Scorer(bleu.BleuConfig(pad=tgt_dict.pad(), eos=tgt_dict.eos(), unk=tgt_dict.unk()))
         self.sentence_avg = sentence_avg
 
@@ -57,7 +58,7 @@ class RewardBaselineCriterion(FairseqCriterion):
         # }
         # return loss, sample_size, logging_output
         tgt_dict = self.task.target_dictionary
-        search_strategy = search.Sampling(tgt_dict, sampling_topk=self.sample_k)
+        search_strategy = search.Sampling(tgt_dict, sampling_topk=self.sampling_k)
         self.sample_gen = SequenceGenerator([model], tgt_dict, beam_size=self.beam_size, search_strategy=search_strategy)
         self.greedy_gen = SequenceGenerator([model], tgt_dict, beam_size=1)
         net_output = model(**sample['net_input'])
@@ -74,32 +75,35 @@ class RewardBaselineCriterion(FairseqCriterion):
     @staticmethod
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
-        parser.add_argument('--criterion-sample-size', type=int, default=5, help='Number of sample size (default: 5)')
-        parser.add_argument('--beam', type=int, default=4, help='Beam size (default: 4)')
+        parser.add_argument('--sampling_topk', type=int, default=2, help='Number of sample size (default: 5)')
+        parser.add_argument('--beam_size', type=int, default=4, help='Beam size (default: 4)')
+        parser.add_argument('--max_order', type=int, default=4, help='Order for bleu score (default: 4)')
 
     def reword(self, ref, pred):
         self.scorer.reset(one_init=True)
         self.scorer.add(ref.type(torch.IntTensor), pred.type(torch.IntTensor))
-        return self.scorer.score()
+        return self.scorer.score(self.max_order)
 
     def compute_loss(self, model, net_output, sample, reduce=True):
         # Generate baseline/samples
-        y_g = self.greedy_gen.generate([model], sample)
-        y_hat = self.sample_gen.generate([model], sample)
+        with torch.no_grad():
+            y_g = self.greedy_gen.generate([model], sample)
+            y_hat = self.sample_gen.generate([model], sample)
         ref = sample['target']
-
+        model.train()
         # rewords
         r_g = torch.tensor([self.reword(ref_i, y_g_i[0]['tokens']) for ref_i, y_g_i in zip(ref, y_g)])
         r_hat = torch.tensor([[self.reword(ref_i, y_hat_i_n['tokens']) for y_hat_i_n in y_hat_i] for ref_i, y_hat_i in zip(ref, y_hat)])
         r_d = r_hat - r_g.unsqueeze(-1)
 
         # scores
+        s = utils.move_to_cuda(sample)
         net_input = {
-            'src_tokens': sample['net_input']['src_tokens'],
-            'src_lengths': sample['net_input']['src_lengths'],
+            'src_tokens': s['net_input']['src_tokens'],
+            'src_lengths': s['net_input']['src_lengths'],
         }
         encoder_out = model.encoder(**net_input)
-        bos = sample['net_input']['prev_output_tokens'][:,:1]
+        bos = s['net_input']['prev_output_tokens'][:,:1]
 
         scores = []
         for n in range(self.beam_size):

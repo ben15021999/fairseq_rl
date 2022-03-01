@@ -1,5 +1,5 @@
-CHECKPOINTS=checkpoints/envi_2
-CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py data-bin/data.tokenized.en-vi.v2 \
+CHECKPOINTS=drive/MyDrive/thesis/checkpoints/envi_v2
+CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py drive/MyDrive/thesis/data-bin/data.tokenized.en-vi.v1 \
   -s en -t vi \
   --lr 0.00001 --clip-norm 0.1 --dropout 0.1 --max-tokens 5000 \
   --arch transformer --save-dir $CHECKPOINTS \
