@@ -3,4 +3,4 @@ CUDA_VISIBLE_DEVICES=0 python fairseq_cli/generate.py \
     --path checkpoints/envi/checkpoint_best.pt \
     --batch-size 32 \
     --beam 4 \
-    --results-path evaluation/envi --sacrebleu --cpu
+    --results-path evaluation/envi --scoring bert_score --cpu

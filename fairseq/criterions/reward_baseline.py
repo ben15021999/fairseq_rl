@@ -86,18 +86,20 @@ class RewardBaselineCriterion(FairseqCriterion):
 
     def compute_loss(self, model, net_output, sample, reduce=True):
         # Generate baseline/samples
+        s = utils.move_to_cuda(sample)
         with torch.no_grad():
             y_g = self.greedy_gen.generate([model], sample)
             y_hat = self.sample_gen.generate([model], sample)
-        ref = sample['target']
+        print(y_hat)
+        ref = s['target']
         model.train()
         # rewords
         r_g = torch.tensor([self.reword(ref_i, y_g_i[0]['tokens']) for ref_i, y_g_i in zip(ref, y_g)])
         r_hat = torch.tensor([[self.reword(ref_i, y_hat_i_n['tokens']) for y_hat_i_n in y_hat_i] for ref_i, y_hat_i in zip(ref, y_hat)])
         r_d = r_hat - r_g.unsqueeze(-1)
+        # print(r_d)
 
         # scores
-        s = utils.move_to_cuda(sample)
         net_input = {
             'src_tokens': s['net_input']['src_tokens'],
             'src_lengths': s['net_input']['src_lengths'],

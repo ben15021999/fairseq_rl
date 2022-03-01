@@ -31,6 +31,7 @@ from fairseq import checkpoint_utils, options, quantization_utils, tasks, utils
 from fairseq.data import data_utils, iterators
 from fairseq.data.plasma_utils import PlasmaStore
 from fairseq.dataclass.configs import FairseqConfig
+from fairseq.dataclass.initialize import add_defaults
 from fairseq.dataclass.utils import convert_namespace_to_omegaconf
 from fairseq.distributed import fsdp_enable_wrap, fsdp_wrap
 from fairseq.distributed import utils as distributed_utils
@@ -45,6 +46,7 @@ def main(cfg: FairseqConfig) -> None:
         cfg = convert_namespace_to_omegaconf(cfg)
 
     utils.import_user_module(cfg.common)
+    add_defaults(cfg)
 
     if (
         distributed_utils.is_master(cfg.distributed_training)
@@ -438,7 +440,7 @@ def validate(
 
     trainer.begin_valid_epoch(epoch_itr.epoch)
     valid_losses = []
-    for subset in subsets:
+    for subset_idx, subset in enumerate(subsets):
         logger.info('begin validation on "{}" subset'.format(subset))
 
         # Initialize data iterator
@@ -481,7 +483,9 @@ def validate(
                 trainer.valid_step(sample)
 
         # log validation stats
-        stats = get_valid_stats(cfg, trainer, agg.get_smoothed_values())
+        # only tracking the best metric on the 1st validation subset
+        tracking_best = subset_idx == 0
+        stats = get_valid_stats(cfg, trainer, agg.get_smoothed_values(), tracking_best)
 
         if hasattr(task, "post_validate"):
             task.post_validate(trainer.get_model(), stats, agg)
@@ -493,10 +497,13 @@ def validate(
 
 
 def get_valid_stats(
-    cfg: DictConfig, trainer: Trainer, stats: Dict[str, Any]
+    cfg: DictConfig,
+    trainer: Trainer,
+    stats: Dict[str, Any],
+    tracking_best: bool,
 ) -> Dict[str, Any]:
     stats["num_updates"] = trainer.get_num_updates()
-    if hasattr(checkpoint_utils.save_checkpoint, "best"):
+    if tracking_best and hasattr(checkpoint_utils.save_checkpoint, "best"):
         key = "best_{0}".format(cfg.checkpoint.best_checkpoint_metric)
         best_function = max if cfg.checkpoint.maximize_best_checkpoint_metric else min
         stats[key] = best_function(
