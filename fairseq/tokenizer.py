@@ -9,10 +9,6 @@ from __future__ import print_function
 import re
 from pyvi import ViTokenizer
 from underthesea import word_tokenize
-from transformers import BertTokenizer
-
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-SPACE_NORMALIZER = re.compile(r"\s+")
 
 def check_mrs(content, i):
     is_mr = (i >= 2 and 
