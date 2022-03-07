@@ -19,8 +19,8 @@ from fairseq.criterions import FairseqCriterion, register_criterion
 logger = logging.getLogger(__name__)
 
 @register_criterion('reward_shaping')
-class MultinomialRL(FairseqCriterion):
-    def __init__(self, task, beam_size, multinomial_sample_train, sampling_topk, max_order, gram, mle_weight, modgleu):
+class RewardShaping(FairseqCriterion):
+    def __init__(self, task, beam_size, multinomial_sample_train, sampling_topk, max_order):
         super().__init__(task)
         self.beam_size = beam_size
         self.multinomial_sample_train = multinomial_sample_train
@@ -55,7 +55,7 @@ class MultinomialRL(FairseqCriterion):
             search.Sampling(tgt_dict, sampling_topk=self.sampling_topk) if self.multinomial_sample_train else None
         )
         translator = SequenceGenerator([model], tgt_dict=tgt_dict,
-                                       beam_size=sample_beam, min_len=1, max_len=200, search_strategy=search_strategy)
+                                       beam_size=sample_beam, search_strategy=search_strategy)
         translator.cuda()
         ct = 0
         translations = []
@@ -89,7 +89,7 @@ class MultinomialRL(FairseqCriterion):
             reduction='sum' if reduce else None)
         mle_tokens = sample['ntokens']
         avg_mle_loss = mle_loss / mle_tokens
-        # print('avg_mle_loss:', avg_mle_loss)
+        print('avg_mle_loss:', avg_mle_loss)
 
         # RL loss
         batch_rl_loss = 0
@@ -103,7 +103,9 @@ class MultinomialRL(FairseqCriterion):
             for i in range(sample_beam):
                 hypo = hypos[i]
                 trans_tokens = hypo['tokens']
-                rewards[i] = self.compute_gleu(tgt_tokens.cpu(), trans_tokens.cpu(), max_order=self.max_order, gram=self.gram).cuda()
+                self.scorer.add(trans_tokens.type(torch.IntTensor), tgt_tokens.type(torch.IntTensor))
+                rewards[i] = self.scorer.score(self.max_order)
+                # rewards[i] = self.compute_gleu(tgt_tokens.cpu(), trans_tokens.cpu(), max_order=self.max_order, gram=self.gram).cuda()
                 # one_sample loss calculation
                 tgt_input_tokens = trans_tokens.new(trans_tokens.shape).fill_(0)
                 assert trans_tokens[-1] == eos_idx
@@ -127,29 +129,28 @@ class MultinomialRL(FairseqCriterion):
                 logprobs[i] = torch.sum(lprob)
                 ntokens = len(train_sample['target'])
                 batch_tokens += ntokens
+            # rewards = rewards[::-1].cumsum()[::-1]
             rl_loss = torch.sum(logprobs * (rewards - rewards.mean()))  # one sample loss            
-            batch_rl_loss += rl_loss
-        
-        avg_rl_loss = batch_rl_loss / batch_tokens
+            print(rl_loss)
         # print('avg_rl_loss:', avg_rl_loss)
 
-        if self.mle_weight:
-            total_loss = self.mle_weight * avg_mle_loss + self.rl_weight * avg_rl_loss
-            total_tokens = batch_tokens + mle_tokens
-        else:
-            total_loss = avg_rl_loss
-            total_tokens = batch_tokens
+        # if self.mle_weight:
+        #     total_loss = self.mle_weight * avg_mle_loss + self.rl_weight * avg_rl_loss
+        #     total_tokens = batch_tokens + mle_tokens
+        # else:
+        #     total_loss = avg_rl_loss
+        #     total_tokens = batch_tokens
 
         logging_output = {
-            'loss': utils.item(total_loss.data),
-            'ntokens': total_tokens,
+            'loss': utils.item(rl_loss.data),
+            'ntokens': batch_tokens,
             'nsentences': sample['target'].size(0),
-            'sample_size': total_tokens,
+            'sample_size': batch_tokens,
         }
 
         # print('total: ',total_loss)
 
-        return total_loss, total_tokens, logging_output
+        return min_rl_loss, batch_tokens, logging_output
 
     @staticmethod
     def reduce_metrics(logging_outputs) -> None:

@@ -28,8 +28,8 @@ class MeteorScorer(BaseScorer):
         self.scores = []
 
     def add_string(self, ref, pred):
-        self.ref.append(ref)
-        self.pred.append(pred)
+        self.ref.append(ref.split())
+        self.pred.append(pred.split())
 
     def score(self, order=4):
         self.scores = [

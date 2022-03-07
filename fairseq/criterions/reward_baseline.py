@@ -90,7 +90,7 @@ class RewardBaselineCriterion(FairseqCriterion):
         with torch.no_grad():
             y_g = self.greedy_gen.generate([model], sample)
             y_hat = self.sample_gen.generate([model], sample)
-        print(y_hat)
+        # print(y_hat)
         ref = s['target']
         model.train()
         # rewords
@@ -117,10 +117,11 @@ class RewardBaselineCriterion(FairseqCriterion):
             
             lprobs = model.get_normalized_probs(net_output, log_probs=True)[:, :-1, :]
             lprobs = lprobs.reshape(-1, lprobs.size(-1))
-            lprobs = lprobs[range(lprobs.size(0)), output_tokens.reshape(-1)]
+            lprobs = -lprobs[range(lprobs.size(0)), output_tokens.reshape(-1)]
             lprobs = lprobs.reshape(output_tokens.size())
+            # lprobs = -lprobs.gather(dim=-1)
             lprobs = lprobs.sum(dim=-1, keepdim=True)
-
+            # print(lprobs)
             scores.append(lprobs)
         
         scores = torch.cat(scores, dim=-1)
