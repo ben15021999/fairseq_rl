@@ -124,7 +124,5 @@ def tokenize_line(line):
 def tokenize_vi(line):
     # line = SPACE_NORMALIZER.sub(" ", line)
     line = fix_contents(line)
-    line1 = word_tokenize(line, format="text")
-    line = line + ' ' + line1
     # line = line.strip()
-    return line.split()
+    return word_tokenize(line, format="text").split()
