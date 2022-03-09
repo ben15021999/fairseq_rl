@@ -86,7 +86,7 @@ class RewardBaselineCriterion(FairseqCriterion):
 
     def compute_loss(self, model, net_output, sample, reduce=True):
         # Generate baseline/samples
-        s = utils.move_to_cuda(sample)
+        s = utils.move_to_cpu(sample)
         with torch.no_grad():
             y_g = self.greedy_gen.generate([model], sample)
             y_hat = self.sample_gen.generate([model], sample)

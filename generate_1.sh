@@ -1,5 +1,5 @@
 CUDA_VISIBLE_DEVICES=0 python fairseq_cli/generate.py \
-    data-bin/data.tokenized.en-vi.v2 \
+    data-bin/data.tokenized.en-vi.v6 \
     --path checkpoints/envi_1/checkpoint_best.pt \
     --batch-size 32 \
     --beam 4 \

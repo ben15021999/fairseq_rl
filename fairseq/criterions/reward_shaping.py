@@ -56,7 +56,7 @@ class RewardShaping(FairseqCriterion):
         )
         translator = SequenceGenerator([model], tgt_dict=tgt_dict,
                                        beam_size=sample_beam, search_strategy=search_strategy)
-        translator.cuda()
+        translator.cpu()
         ct = 0
         translations = []
 
@@ -98,40 +98,42 @@ class RewardShaping(FairseqCriterion):
         for sample_id, src_tokens, tgt_tokens, hypos in translations:
             # calculate bleu
             sample_ind += 1
-            rewards = torch.Tensor(sample_beam).float().cuda()
-            logprobs = torch.Tensor(sample_beam).float().cuda()
+            # rewards = torch.Tensor(sample_beam).float().cuda()
+            # logprobs = torch.Tensor(sample_beam).float().cuda()
+            reward = torch.tensor(100.0)
             for i in range(sample_beam):
                 hypo = hypos[i]
                 trans_tokens = hypo['tokens']
-                self.scorer.add(trans_tokens.type(torch.IntTensor), tgt_tokens.type(torch.IntTensor))
-                rewards[i] = self.scorer.score(self.max_order)
+                self.scorer.add(tgt_tokens.type(torch.IntTensor), trans_tokens.type(torch.IntTensor))
+                terminal_reward = self.scorer.score(self.max_order)
+                if torch.gt(terminal_reward, reward):
+                    reward = terminal_reward
                 # rewards[i] = self.compute_gleu(tgt_tokens.cpu(), trans_tokens.cpu(), max_order=self.max_order, gram=self.gram).cuda()
                 # one_sample loss calculation
-                tgt_input_tokens = trans_tokens.new(trans_tokens.shape).fill_(0)
-                assert trans_tokens[-1] == eos_idx
-                tgt_input_tokens[0] = eos_idx
-                tgt_input_tokens[1:] = trans_tokens[:-1]
-                train_sample = {
-                    'net_input': {
-                        'src_tokens': src_tokens.view(1, -1),
-                        'src_lengths': torch.LongTensor(src_tokens.numel()).view(1, -1),
-                        'prev_output_tokens': tgt_input_tokens.view(1, -1),
-                    },
-                    'target': trans_tokens.view(1, -1)
-                }
-                train_sample = utils.move_to_cuda(train_sample)
-                net_output = model(**train_sample['net_input'])
-                lprobs = model.get_normalized_probs(net_output, log_probs=True)
-                lprobs = lprobs.view(-1, lprobs.size(-1))
-                target = model.get_targets(train_sample, net_output).view(-1, 1)
-                non_pad_mask = target.ne(tgt_dict.pad())
-                lprob = -lprobs.gather(dim=-1, index=target)[non_pad_mask]
-                logprobs[i] = torch.sum(lprob)
-                ntokens = len(train_sample['target'])
-                batch_tokens += ntokens
+            tgt_input_tokens = trans_tokens.new(trans_tokens.shape).fill_(0)
+            assert trans_tokens[-1] == eos_idx
+            tgt_input_tokens[0] = eos_idx
+            tgt_input_tokens[1:] = trans_tokens[:-1]
+            train_sample = {
+                'net_input': {
+                    'src_tokens': src_tokens.view(1, -1),
+                    'src_lengths': torch.LongTensor(src_tokens.numel()).view(1, -1),
+                    'prev_output_tokens': tgt_input_tokens.view(1, -1),
+                },
+                'target': trans_tokens.view(1, -1)
+            }
+            train_sample = utils.move_to_cpu(train_sample)
+            net_output = model(**train_sample['net_input'])
+            lprobs = model.get_normalized_probs(net_output, log_probs=True)
+            lprobs = lprobs.view(-1, lprobs.size(-1))
+            target = model.get_targets(train_sample, net_output).view(-1, 1)
+            non_pad_mask = target.ne(tgt_dict.pad())
+            lprob = -lprobs.gather(dim=-1, index=target)[non_pad_mask]
+            # ntokens = len(train_sample['target'])
+            # batch_tokens += ntokens
             # rewards = rewards[::-1].cumsum()[::-1]
-            rl_loss = torch.sum(logprobs * (rewards - rewards.mean()))  # one sample loss            
-            print(rl_loss)
+            rl_loss = torch.sum(lprob * reward)  # one sample loss   
+            batch_rl_loss += rl_loss
         # print('avg_rl_loss:', avg_rl_loss)
 
         # if self.mle_weight:
@@ -142,7 +144,7 @@ class RewardShaping(FairseqCriterion):
         #     total_tokens = batch_tokens
 
         logging_output = {
-            'loss': utils.item(rl_loss.data),
+            'loss': utils.item(batch_rl_loss.data),
             'ntokens': batch_tokens,
             'nsentences': sample['target'].size(0),
             'sample_size': batch_tokens,
@@ -150,7 +152,7 @@ class RewardShaping(FairseqCriterion):
 
         # print('total: ',total_loss)
 
-        return min_rl_loss, batch_tokens, logging_output
+        return batch_rl_loss, batch_tokens, logging_output
 
     @staticmethod
     def reduce_metrics(logging_outputs) -> None:
