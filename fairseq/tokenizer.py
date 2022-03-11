@@ -9,7 +9,7 @@ from __future__ import print_function
 import re
 from underthesea import word_tokenize
 import nltk
-from nltk.tokenize import word_tokenize
+from nltk.tokenize import word_tokenize as en_tokenize
 
 def check_mrs(content, i):
     is_mr = (i >= 2 and 
@@ -119,7 +119,7 @@ def fix_contents(contents):
 def tokenize_line(line):
     # line = SPACE_NORMALIZER.sub(" ", line)
     line = fix_contents(line)
-    return word_tokenize(line)
+    return en_tokenize(line)
     # return tokenizer.tokenize(line)
 
 def tokenize_vi(line):
