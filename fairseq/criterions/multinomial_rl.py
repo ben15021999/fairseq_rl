@@ -133,10 +133,8 @@ class MultinomialRL(FairseqCriterion):
                 lprob = -lprobs.gather(dim=-1, index=target)[non_pad_mask]
                 logprobs[i] = torch.sum(lprob)
                 ntokens = len(train_sample['target'])
-                print(ntokens)
                 batch_tokens += ntokens
             rl_loss = torch.sum(logprobs * (rewards - rewards.mean()))  # one sample loss            
-            print(rl_loss)
             batch_rl_loss += rl_loss
         
         avg_rl_loss = batch_rl_loss / batch_tokens
