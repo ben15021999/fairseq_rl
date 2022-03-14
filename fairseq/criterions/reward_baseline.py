@@ -86,7 +86,7 @@ class RewardBaselineCriterion(FairseqCriterion):
 
     def compute_loss(self, model, net_output, sample, reduce=True):
         # Generate baseline/samples
-        s = utils.move_to_cpu(sample)
+        s = utils.move_to_cuda(sample)
         with torch.no_grad():
             y_g = self.greedy_gen.generate([model], sample)
             y_hat = self.sample_gen.generate([model], sample)
@@ -106,13 +106,14 @@ class RewardBaselineCriterion(FairseqCriterion):
         }
         encoder_out = model.encoder(**net_input)
         bos = s['net_input']['prev_output_tokens'][:,:1]
-
+        print(encoder_out)
         scores = []
         for n in range(self.beam_size):
             output_tokens = [y_hat_i[n]['tokens'] for y_hat_i in y_hat]
             output_tokens = rnn_utils.pad_sequence(output_tokens, batch_first=True, padding_value=self.pad)
 
-            prev_output_tokens = torch.cat([bos, output_tokens], dim=-1)
+            prev_output_tokens = bos
+            print("aaa", prev_output_tokens)
             net_output = model.decoder(prev_output_tokens, encoder_out=encoder_out)
             
             lprobs = model.get_normalized_probs(net_output, log_probs=True)[:, :-1, :]

@@ -8,6 +8,7 @@ from __future__ import print_function
 
 import re
 from underthesea import word_tokenize
+from pyvi import ViTokenizer
 import nltk
 from nltk.tokenize import word_tokenize as en_tokenize
 
@@ -126,4 +127,4 @@ def tokenize_vi(line):
     # line = SPACE_NORMALIZER.sub(" ", line)
     line = fix_contents(line)
     # line = line.strip()
-    return word_tokenize(line, format="text").split()
+    return en_tokenize(line)
