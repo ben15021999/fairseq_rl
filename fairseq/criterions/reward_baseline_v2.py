@@ -28,9 +28,9 @@ class RewardBaselineCriterion(FairseqCriterion):
 
     def __init__(self, task, sentence_avg, max_order):
         super().__init__(task)
-        tgt_dict = task.tgt_dict
+        self.tgt_dict = task.tgt_dict
         self.max_order = max_order
-        self.scorer = bleu.Scorer(bleu.BleuConfig(pad=tgt_dict.pad(), eos=tgt_dict.eos(), unk=tgt_dict.unk()))
+        self.scorer = bleu.Scorer(bleu.BleuConfig(pad=self.tgt_dict.pad(), eos=self.tgt_dict.eos(), unk=self.tgt_dict.unk()))
         self.sentence_avg = sentence_avg
 
     def forward(self, model, sample, reduce=True):
@@ -41,7 +41,6 @@ class RewardBaselineCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
         # Targets for reward computation
-        sample = utils.move_to_cuda(sample)
         target = sample['target']
 
         # Forward encoder
@@ -50,7 +49,7 @@ class RewardBaselineCriterion(FairseqCriterion):
             return_all_hiddens=True
         )
 
-        device='cuda'
+        device='cpu'
 
         # print(encoder_out)
 
@@ -58,18 +57,18 @@ class RewardBaselineCriterion(FairseqCriterion):
         pred_toks, lprob_toks, lprobs, bas_toks = sequential_decoding(model, encoder_out, sample,
                                                                       max_len_decoding=100,
                                                                       device=device)
-
+        # print(pred_toks)
         lprobs_added = lprob_toks.sum(axis=1)
-        lprobs_added = utils.move_to_cuda(lprobs_added)
+        # lprobs_added = utils.move_to_cuda(lprobs_added)
         lprobs_avg = lprobs_added.mean()
 
         r_hat = torch.tensor([self.reword(target_i, y_g_i) for target_i, y_g_i in zip(target, pred_toks)])
         r_baseline = torch.tensor([self.reword(target_i, y_g_i) for target_i, y_g_i in zip(target, bas_toks)])
 
-        rewards_detached = utils.move_to_cuda(r_hat.detach())
-        rewards_baseline_detached = utils.move_to_cuda(r_baseline.detach())
+        rewards_detached = r_hat.detach()
+        rewards_baseline_detached = r_baseline.detach()
 
-        loss = (rewards_detached - rewards_baseline_detached) * lprobs_added
+        loss = (rewards_baseline_detached - rewards_detached) * lprobs_added
         loss = loss.sum()
 
         sample_size = sample['ntokens']
@@ -89,6 +88,15 @@ class RewardBaselineCriterion(FairseqCriterion):
 
     def reword(self, ref, pred):
         self.scorer.reset(one_init=True)
+        eos_token_id = torch.tensor(self.tgt_dict.eos())
+        new_pred = []
+        for i in pred:
+            if(i != eos_token_id):
+                new_pred.append(i)
+            else:
+                new_pred.append(i)
+                break
+        pred = torch.tensor(new_pred)
         self.scorer.add(ref.type(torch.IntTensor), pred.type(torch.IntTensor))
         return self.scorer.score(self.max_order)
 
@@ -174,6 +182,7 @@ def sequential_decoding(model, encoded_source, sample, max_len_decoding, device)
         # Sampling
         dist = Categorical(logits=lprobs_pred)
         pred_tok_pred = dist.sample().unsqueeze(dim=1)
+        # print(pred_tok_pred)
         lprob_tok_pred = torch.gather(lprobs_pred, dim=1, index=pred_tok_pred)
         # print(lprob_tok.size())
         # print(lprob_tok_index.size())

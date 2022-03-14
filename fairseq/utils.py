@@ -370,13 +370,7 @@ def clip_grad_norm_(params, max_norm, aggregate_norm_fn=None) -> torch.Tensor:
         if multi_tensor_l2norm_available:
             total_norm = multi_tensor_total_norm(grads)
         else:
-            if torch.cuda.is_available():
-                warnings.warn(
-                    "amp_C fused kernels unavailable, disabling multi_tensor_l2norm; "
-                    "you may get better performance by installing NVIDIA's apex library"
-                )
-                device = torch.cuda.current_device()
-            elif grads[0].device.type == "xla":
+            if grads[0].device.type == "xla":
                 device = grads[0].device
             else:
                 device = torch.device("cpu")
